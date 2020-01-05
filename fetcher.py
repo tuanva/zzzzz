@@ -39,9 +39,12 @@ class Fetcher():
     JSON_PAYLOAD_PREFIX = "for (;;); "
 
     def __init__(self):
-        # It's fiiiiiiiiiiiiiine
-        os.system("mkdir -p {log_dir}".format(log_dir=graph.LOG_DATA_DIR))
+        if not os.path.exists(graph.LOG_DATA_DIR):
+            os.makedirs(graph.LOG_DATA_DIR)
         self.reset_params()
+        self.excludes = []
+        if hasattr(secrets, 'excludes'):
+            self.excludes = secrets.excludes.split(',',1)
 
     def make_request(self):
         # Load balancing is for chumps. Facebook can take it.
@@ -61,7 +64,6 @@ class Fetcher():
                 data = json.loads(raw_response)
         except ValueError as e:
             print(str(e))
-            print(content)
             return None
 
         print("Response:" + str(data))
@@ -70,21 +72,21 @@ class Fetcher():
 
 
     def _log_lat(self, uid, lat_time):
+        if not uid in self.excludes:
+            with open("log/{uid}.txt".format(uid=uid), "a") as f:
+                # Now add an online status at the user's LAT.
+                user_data = []
+                user_data.append(lat_time)
+                user_data.append(ACTIVE_STATUS_JSON)
+                f.write("|".join(user_data))
+                f.write("\n")
 
-        with open("log/{uid}.txt".format(uid=uid), "a") as f:
-            # Now add an online status at the user's LAT.
-            user_data = []
-            user_data.append(lat_time)
-            user_data.append(ACTIVE_STATUS_JSON)
-            f.write("|".join(user_data))
-            f.write("\n")
-
-            # Assume the user is currently offline, since we got a lat for them. (This is guaranteed I think.)
-            user_data = []
-            user_data.append(str(time.time()))
-            user_data.append(OFFLINE_STATUS_JSON)
-            f.write("|".join(user_data))
-            f.write("\n")
+                # Assume the user is currently offline, since we got a lat for them. (This is guaranteed I think.)
+                user_data = []
+                user_data.append(str(time.time()))
+                user_data.append(OFFLINE_STATUS_JSON)
+                f.write("|".join(user_data))
+                f.write("\n")
 
 
 
@@ -94,7 +96,7 @@ class Fetcher():
         if resp is None:
             print("Got error from request, restarting...")
             self.reset_params()
-            return 
+            return
 
         # We got info about which pool/sticky we should be using I think??? Something to do with load balancers?
         if "lb_info" in resp:
@@ -119,12 +121,13 @@ class Fetcher():
                             self._log_lat(uid, str(item["overlay"][uid]["la"]))
 
                             # Now log their current status.
-                            with open("log/{uid}.txt".format(uid=uid), "a") as f:
-                                user_data = []
-                                user_data.append(str(time.time()))
-                                user_data.append(json.dumps(item["overlay"][uid]["p"]))
-                                f.write("|".join(user_data))
-                                f.write("\n")
+                            if "p" in item["overlay"][uid]:
+                                with open("log/{uid}.txt".format(uid=uid), "a") as f:
+                                    user_data = []
+                                    user_data.append(str(time.time()))
+                                    user_data.append(json.dumps(item["overlay"][uid]["p"]))
+                                    f.write("|".join(user_data))
+                                    f.write("\n")
 
                 # This list contains the last active times (lats) of users.
                 if "buddyList" in item:
